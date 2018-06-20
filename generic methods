@@ -1,4 +1,6 @@
-/*  copying file (.jpg, .mp3, .mp4 etc) from one location to another */
+/*  
+ * copying file (.jpg, .mp3, .mp4 etc) from one location to another
+ */
 
 InputStream fis = null;
 OutputStream fos = null;
@@ -13,3 +15,179 @@ int length;
 while ((length = fis.read(buffer)) > 0) {
     fos.write(buffer, 0, length);
 }
+
+
+/*
+ * convert .jpg and .mp4 file into an encoded string and return it through jason array string
+ */
+ 
+public static String sendPromotionAlertDetails(URequestContext ctxt)
+        throws UServletException, IOException {
+
+    String respStr = "";
+    try {
+        JSONArray jsonFileArr = new JSONArray();
+
+        ResultSet rs = Alert.getPromoAttachmentDetail(ctxt);
+
+        while (rs != null && rs.next()) {
+
+            JSONObject fileDetailsObj = null;
+            BASE64Encoder encoder = new BASE64Encoder();
+
+            String fileName = rs.getString("pad_file_name");
+            String fileExt = rs.getString("pad_file_extension");
+            String compFilePath = rs.getString("pad_file_path") + "\\" + fileName + fileExt;
+
+            if (".jpg".equalsIgnoreCase(fileExt)) {
+
+                BufferedImage img = null;
+                ByteArrayOutputStream baos = null;
+                try {
+                    String encodedImgString = "";
+                    img = ImageIO.read(new File(compFilePath));
+                    baos = new ByteArrayOutputStream();
+                    ImageIO.write(img, "jpg", baos);
+                    encodedImgString = encoder.encodeBuffer(baos.toByteArray());
+
+                    fileDetailsObj = new JSONObject();
+                    fileDetailsObj.put("fileName", fileName);
+                    fileDetailsObj.put("fileExt", fileExt);
+                    fileDetailsObj.put("promoActiveDate", rs.getString("pad_active_date"));
+                    fileDetailsObj.put("promoEndDate", rs.getString("pad_end_date"));
+                    fileDetailsObj.put("encodedFileString", encodedImgString);
+
+                } catch (IOException e) {
+                    logger.error("Error in Downloading Images : " + e.getMessage());
+                } finally {
+                    if (baos != null) {
+                        baos.flush();
+                        baos.close();
+                    }
+                    if (img != null) {
+                        img.flush();
+                    }
+                }
+
+            } else if (".mp4".equalsIgnoreCase(fileExt)) {
+
+                FileInputStream fis = null;
+                ByteArrayOutputStream baos = null;
+                try {
+                    String encodedVideoString = "";
+                    fis = new FileInputStream(new File(compFilePath));
+                    baos = new ByteArrayOutputStream();
+                    byte[] byteCap = new byte[1024];
+
+                    for (int byteLen; (byteLen = fis.read(byteCap)) != -1;) {
+                        baos.write(byteCap, 0, byteLen);
+                    }
+                    byte[] videoBytes = baos.toByteArray();
+                    encodedVideoString = encoder.encodeBuffer(videoBytes);
+
+                    fileDetailsObj = new JSONObject();
+                    fileDetailsObj.put("fileName", fileName);
+                    fileDetailsObj.put("fileExt", fileExt);
+                    fileDetailsObj.put("promoActiveDate", rs.getString("pad_active_date"));
+                    fileDetailsObj.put("promoEndDate", rs.getString("pad_end_date"));
+                    fileDetailsObj.put("encodedFileString", encodedVideoString);
+
+                } catch (IOException e) {
+                    logger.error("Error in Downloading Video : " + e.getMessage());
+                } finally {
+                    if (baos != null) {
+                        baos.flush();
+                        baos.close();
+                    }
+                    if (fis != null) {
+                        fis.close();
+                    }
+                }
+            }
+            jsonFileArr.put(fileDetailsObj);
+        }
+
+        rs.beforeFirst();
+        if (rs != null && rs.next()) {
+
+            respStr = jsonFileArr.toString();
+        }
+    } catch (Exception e) {
+        respStr = "failed";
+        logger.debug("Error in sendPromotionAlertDetails method : " + e);
+    } finally {
+        return respStr;
+    }
+}
+
+
+/*
+ * convert encoded string into file
+ */
+
+private static void processPromotionalImageDetails(URequestContext ctxt, String responseData)
+        throws Exception {
+
+    ResultSet rs = null;
+    JSONArray jsonFileArr = new JSONArray(responseData);
+    try {
+        // this will give you the absolute path of uSCM (or project) which is running in tomcate
+        String tomDirPath = (new File("webapps\\uSCM")).getAbsolutePath();
+        String filePath = tomDirPath + UConfig.getParameterValue(ctxt, "DOWNLOAD_PROMO_ATTACHMENTS_DIR");
+
+        File file = new File(filePath);
+        if (!file.exists()) {
+            file.mkdir();
+        }
+
+        String sql = "UPDATE uscm_promo_attachment_detail SET pad_row_invalidated = 1";
+        ctxt.getQueryEngine().executeUpdate(sql);
+
+        for (int i = 0; i < jsonFileArr.length(); i++) {
+
+            JSONObject fileDetailsObj = new JSONObject(jsonFileArr.get(i).toString());
+
+            String fileName = fileDetailsObj.getString("fileName");
+            String fileExt = fileDetailsObj.getString("fileExt");
+            String promoActiveDate = fileDetailsObj.getString("promoActiveDate");
+            String promoEndDate = fileDetailsObj.getString("promoEndDate");
+            String encodedFileString = fileDetailsObj.getString("encodedFileString");
+
+            // Note : create file with full name including extension for egxample image.jpg or video.mp4
+            file = new File(filePath, fileName + fileExt);
+
+            if (".jpg".equalsIgnoreCase(fileExt)) {
+
+                writeImageFile(ctxt, file, encodedFileString);
+            }
+            if (".mp4".equalsIgnoreCase(fileExt)) {
+
+                writeVideoFile(ctxt, file, encodedFileString);
+            }
+
+            rs = getPromoAttachmentDetail(ctxt, fileName);
+            if (rs != null && rs.next()) {
+                updatePromoAttachmentDetailData(ctxt, fileName, fileExt, filePath, promoActiveDate, promoEndDate);
+            } else {
+                insertPromoAttachmentDetailData(ctxt, fileName, fileExt, filePath, promoActiveDate, promoEndDate);
+            }
+        }
+
+        // deleting invalid files
+        sql = "SELECT pad_file_name, pad_file_extension, pad_file_path, pad_active_date, pad_end_date"
+                + " FROM uscm_promo_attachment_detail WHERE pad_row_invalidated = 1";
+        rs = ctxt.getQueryEngine().executeQuery(sql);
+
+        while (rs != null && rs.next()) {
+
+            File delFile = new File(filePath + "\\" + rs.getString("pad_file_name") + rs.getString("pad_file_extension"));
+            if (delFile.exists()) {
+                delFile.delete();
+            }
+        }
+    } catch (Exception e) {
+        logger.debug("Error in processPromotionalImageDetails method : " + e.getMessage());
+        throw new Exception(e.getMessage(), e);
+    }
+}
+
