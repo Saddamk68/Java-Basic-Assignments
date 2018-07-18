@@ -1,0 +1,148 @@
+HttpServletRequest request;
+HttpServletResponse response;
+
+URequestContext ctxt = new URequestContext(request, response);;
+UQueryEngine qe = ctxt.getQueryEngine();
+
+// URequestContext class
+public UQueryEngine getQueryEngine()
+    throws UDBAccessException {
+
+    if (qe == null) {
+        if (dbResourceName == null) {
+            qe = UClassFactory.getQueryEngine(); //qe = new UQueryEngine();
+        } else {
+            qe = UClassFactory.getQueryEngine(dbResourceName); //qe = new UQueryEngine();
+        }
+    }
+    return qe;
+}
+
+// UClassFactory class
+public static UQueryEngine getQueryEngine() throws UDBAccessException {
+
+    Connection con = null ;
+    UQueryEngine qe = null ;
+
+    try{
+        logger.debug("**************** Creating DB connection ****************");
+        con = UDBConnectionManager.getConnection() ;
+
+        String dbProductName = con.getMetaData().getDatabaseProductName(); // ll provide you which database are getting used (oracle. mysql, mssql)
+
+        return _createQueryEngine(dbProductName, con) ;
+
+    } catch (Exception e){
+
+        try {
+    if(con != null) {
+        logger.debug("**************** Closing DB connection (due to error) ****************");
+        con.close();
+
+        con = null;
+    }
+    } catch (Exception ex) {
+    // Nothing we can really do here 
+    ;
+    }
+
+    throw new UDBAccessException("Failed to create Query Engine!, " + e.getMessage(), e);
+    }
+
+}
+
+// UClassFactory class
+public static UQueryEngine getQueryEngine(String dbResourceName) throws UDBAccessException {
+
+    UQueryEngine qe = null ;
+    Connection con = null ;
+
+    try{
+
+        con = UDBConnectionManager.getConnection(dbResourceName) ;
+
+        String dbProductName = con.getMetaData().getDatabaseProductName(); // ll provide you which database are getting used (oracle. mysql, mssql)
+
+        con.close() ;
+        con = null ;
+
+        return _createQueryEngine(dbProductName, con) ;
+
+    } catch (Exception e){
+
+        try {
+    if(con != null) {
+        logger.debug("**************** Closing DB connection (due to error) ****************");
+        con.close();
+
+        con = null;
+    }
+    } catch (Exception ex) {
+    // Nothing we can really do here 
+    ;
+    }
+
+        throw new UDBAccessException("Failed to create Query Engine!, " + e.getMessage(), e);
+    }
+
+}
+
+// UDBConnectionManager class
+public static Connection getConnection() throws UDBAccessException, NamingException {
+
+    try {
+
+        if (initCtx == null) {
+            synchronized (lock) {
+                // Check again just in case some other thread already set initCtx
+                // while the current thread was waiting on the lock
+                if (initCtx == null) {
+                    initCtx = new InitialContext();
+                    envCtx = (Context) initCtx.lookup("java:comp/env");
+                }
+            }
+        }
+
+        ds = (DataSource) envCtx.lookup("jdbc/UbqAppDB"); // ll provide you the object of your context file
+
+        Connection con = ds.getConnection(); // get a connection based on the connection detail provided in the context
+
+        return con;
+
+    } catch (Exception e) {
+        StringWriter writer = new StringWriter();
+        PrintWriter printWriter = new PrintWriter(writer);
+        e.printStackTrace(printWriter);
+        printWriter.flush();
+
+        String stackTrace = writer.toString();
+        logger.debug(stackTrace);
+        throw new UDBAccessException("Failed to get database connection!, " + e.getMessage(), e);
+    } finally {
+
+        ds = null;
+
+        if (initCtx != null) {
+            initCtx.close();
+        }
+    }
+}
+
+// UClassFactory class
+private static UQueryEngine _createQueryEngine(String dbProductName, Connection con) throws UDBAccessException {
+         UQueryEngine qe = null ;
+     try{
+     if ("oracle".equalsIgnoreCase(dbProductName))
+            qe = new UOracleQueryEngine(con) ;
+        else if("mysql".equalsIgnoreCase(dbProductName))
+            qe = new UMySqlQueryEngine(con) ;
+        else if("mssql".equalsIgnoreCase(dbProductName) || "microsoft sql server".equalsIgnoreCase(dbProductName))
+            qe = new UMSSqlQueryEngine(con) ;
+
+        return qe ;
+
+     } catch(Exception e){
+         throw new UDBAccessException("Failed to create Query Engine!, " + e.getMessage(), e);
+     }
+ }
+
