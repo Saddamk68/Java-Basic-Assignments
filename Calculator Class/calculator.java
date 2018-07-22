@@ -327,6 +327,26 @@ class calculator {
 		return (sum==num);
 	}
 	
+	// calculate absolute square root
+ 	public static double calculateSqrt (int num) {
+
+	    double rootValue = 1.00;
+
+	    for (int i = 0; i < num; i++) {
+
+		rootValue = 0.5 * (rootValue + num/rootValue);
+	    }   
+
+	    //To make only 3 digit available after decimal point
+	    int returnValue = (int)(rootValue * 1000);  
+	    rootValue = returnValue;
+	    rootValue /=1000;
+
+	    System.out.println("Root Value Calculated : " + rootValue);
+	    System.out.println("Root Value By InBuild Method (Math.sqrt) : " + Math.sqrt(num));
+
+	    return rootValue;
+	}
 }
 
 /*class test
