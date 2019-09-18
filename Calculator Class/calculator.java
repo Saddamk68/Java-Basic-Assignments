@@ -174,7 +174,16 @@ class calculator {
   	for(int i=1; i<=num; i++)
   		fact = fact*i;
   	return (fact);
-  }	
+  }
+  //Factoria using recursion
+  public static int fact(int num) {
+       if (num == 0) {
+           return 1;
+       } else {
+           return (num * fact(num - 1));
+       }
+   }
+	
   //Time sec --> hour
   	public static String time(int sec)
 	{
